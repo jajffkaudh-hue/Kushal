@@ -1,9 +1,16 @@
 import json
 import logging
 import os
-from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    BotCommand,
+    BotCommandScopeChat,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -19,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Aapka diya gaya Bot Token
 BOT_TOKEN = "8017205070:AAFgbCv6bPfLb-CWCelBW2_S50NYDOIAh2Q"
 
-# Yahan apna Telegram Chat ID (numeric ID, jaise 123456789) daalein
+# Render Environment Variable se ADMIN_ID lega (nahi mila to 0)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 USERS_FILE = "users.json"
@@ -63,14 +70,15 @@ def build_welcome_caption(first_name: str, chat_id: int) -> str:
 
 
 def build_contact_admin_keyboard() -> InlineKeyboardMarkup:
-    # Sirf "Contact Admin" button — koi external/random link nahi
     keyboard = [
         [InlineKeyboardButton("📩 Contact Admin", callback_data="contact_admin")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
-async def get_user_photo_id(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str | None:
+async def get_user_photo_id(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int
+) -> str | None:
     try:
         photos = await context.bot.get_user_profile_photos(user_id=user_id, limit=1)
         if photos.total_count > 0 and photos.photos[0]:
@@ -81,6 +89,9 @@ async def get_user_photo_id(context: ContextTypes.DEFAULT_TYPE, user_id: int) ->
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return
+
     user = update.effective_user
     chat_id = update.effective_chat.id
     save_user(user.id)
@@ -106,6 +117,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return
+
     user = update.effective_user
     chat_id = update.effective_chat.id
     save_user(user.id)
@@ -116,12 +130,16 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
-async def complaint_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def complaint_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if not update.message or not update.effective_user:
+        return
+
     user = update.effective_user
-    chat_id = update.effective_chat.id
     save_user(user.id)
 
-    complaint_text = " ".join(context.args).strip()
+    complaint_text = " ".join(context.args).strip() if context.args else ""
     if not complaint_text:
         context.user_data["awaiting_complaint"] = True
         await update.message.reply_text(
@@ -134,7 +152,12 @@ async def complaint_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await submit_complaint(update, context, complaint_text)
 
 
-async def submit_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE, complaint_text: str) -> None:
+async def submit_complaint(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, complaint_text: str
+) -> None:
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return
+
     user = update.effective_user
     chat_id = update.effective_chat.id
     username_display = f"@{user.username}" if user.username else "N/A"
@@ -160,14 +183,19 @@ async def submit_complaint(update: Update, context: ContextTypes.DEFAULT_TYPE, c
     )
 
 
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def broadcast_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if not update.message or not update.effective_user:
+        return
+
     user = update.effective_user
 
     if not is_admin(user.id):
         await update.message.reply_text("⛔ Yeh command sirf Admin ke liye hai.")
         return
 
-    broadcast_text = " ".join(context.args).strip()
+    broadcast_text = " ".join(context.args).strip() if context.args else ""
     if not broadcast_text:
         await update.message.reply_text(
             "📢 **Broadcast Usage:**\n`/broadcast Aapka message yahan likhein`",
@@ -200,6 +228,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not update.effective_user:
+        return
+
     user = update.effective_user
     save_user(user.id)
 
@@ -212,11 +243,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text("Kripya valid complaint text bhejein.")
 
 
-async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_button_click(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     query = update.callback_query
+    if not query:
+        return
+
     await query.answer()
 
-    if query.data == "contact_admin":
+    if query.data == "contact_admin" and query.message:
         if ADMIN_ID != 0:
             admin_info = f"Admin Chat ID: `{ADMIN_ID}`"
         else:
@@ -231,7 +267,6 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def post_init(application: Application) -> None:
-    # Sab users ke side menu mein /start, /id, /complaint
     user_commands = [
         BotCommand("start", "Start bot & welcome"),
         BotCommand("id", "Get your Player Chat ID"),
@@ -239,7 +274,6 @@ async def post_init(application: Application) -> None:
     ]
     await application.bot.set_my_commands(user_commands)
 
-    # Admin ke side menu mein /broadcast bhi add
     if ADMIN_ID != 0:
         admin_commands = user_commands + [
             BotCommand("broadcast", "Broadcast message to users (Admin only)")
