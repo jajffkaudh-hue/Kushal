@@ -1,6 +1,9 @@
+import asyncio
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import os
+import threading
 from telegram import (
     BotCommand,
     BotCommandScopeChat,
@@ -26,10 +29,35 @@ logger = logging.getLogger(__name__)
 # Aapka diya gaya Bot Token
 BOT_TOKEN = "8017205070:AAFgbCv6bPfLb-CWCelBW2_S50NYDOIAh2Q"
 
-# Render Environment Variable se ADMIN_ID lega (nahi mila to 0)
+# Render Environment Variable se ADMIN_ID aur PORT lega
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+PORT = int(os.getenv("PORT", "10000"))
 
 USERS_FILE = "users.json"
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path in ("/", "/health"):
+            body = b'{"status":"ok","bot":"active"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+
+def start_health_server(port: int) -> None:
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info(f"Health server running on port {port}...")
 
 
 def load_users() -> set[int]:
@@ -70,8 +98,9 @@ def build_welcome_caption(first_name: str, chat_id: int) -> str:
 
 
 def build_contact_admin_keyboard() -> InlineKeyboardMarkup:
+    # Color highlight ke liye green badge emoji + sirf Contact Admin button
     keyboard = [
-        [InlineKeyboardButton("📩 Contact Admin", callback_data="contact_admin")]
+        [InlineKeyboardButton("🟢 Contact Admin", callback_data="contact_admin")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -266,6 +295,10 @@ async def on_button_click(
         )
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
+
 async def post_init(application: Application) -> None:
     user_commands = [
         BotCommand("start", "Start bot & welcome"),
@@ -288,6 +321,15 @@ async def post_init(application: Application) -> None:
 
 
 def main() -> None:
+    start_health_server(PORT)
+
+    # Python 3.12+ event loop compatibility
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -296,9 +338,10 @@ def main() -> None:
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(on_button_click))
+    app.add_error_handler(error_handler)
 
     logger.info("Bot is running...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
