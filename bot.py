@@ -1,5 +1,6 @@
 import asyncio
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import html
 import json
 import logging
 import os
@@ -39,7 +40,7 @@ USERS_FILE = "users.json"
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path in ("/", "/health"):
-            body = b'{"status":"ok","bot":"active"}'
+            body = b'{"status":"ok","bot":"24x7-active"}'
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -57,7 +58,7 @@ def start_health_server(port: int) -> None:
     server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    logger.info(f"Health server running on port {port}...")
+    logger.info(f"24/7 health server running on port {port}...")
 
 
 def load_users() -> set[int]:
@@ -87,20 +88,21 @@ def is_admin(user_id: int) -> bool:
     return ADMIN_ID != 0 and user_id == ADMIN_ID
 
 
-def build_welcome_caption(first_name: str, chat_id: int) -> str:
+def build_welcome_caption(mention: str, username: str, chat_id: int) -> str:
     return (
-        f"✨ **Welcome, {first_name}!** ✨\n\n"
-        f"🎮 **Player Chat ID (UID):** `{chat_id}`\n\n"
-        f"Aapka account system ke saath connect ho chuka hai. "
-        f"Apni Chat ID dekhne ke liye `/id` aur kisi bhi samasya ke liye `/complaint` ka upyog karein.\n\n"
-        f"Kisi bhi sahayata ke liye neeche diye gaye button par tap karein."
+        f"𝙃𝙚𝙮  {mention} 𝙬𝙚𝙡𝙘𝙤𝙢𝙚 𝙆𝙪𝙨𝙝𝙖𝙡 𝙙𝙖𝙩𝙖\n\n"
+        f"𝙗𝙤𝙩 𝙪𝙨𝙚𝙙 𝙛𝙤𝙧 𝙘𝙝𝙖𝙩 𝙄𝘿 𝙖𝙣𝙮 𝙥𝙧𝙤𝙗𝙡𝙚𝙢 𝙘𝙤𝙣𝙩𝙖𝙘𝙩 𝙖𝙙𝙢𝙞𝙣 𝙩𝙝𝙖𝙣𝙠𝙨\n\n"
+        f"𝙛𝙤𝙧 𝙨𝙪𝙥𝙥𝙤𝙧𝙩\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🌐 USERNAME: {username}\n"
+        f"🆔 CHAT ID: <code>{chat_id}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━"
     )
 
 
 def build_contact_admin_keyboard() -> InlineKeyboardMarkup:
-    # Color highlight ke liye green badge emoji + sirf Contact Admin button
     keyboard = [
-        [InlineKeyboardButton("🟢 Contact Admin", callback_data="contact_admin")]
+        [InlineKeyboardButton(" Contact Admin", callback_data="contact_admin")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -125,8 +127,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     save_user(user.id)
 
-    first_name = user.first_name or "Player"
-    caption = build_welcome_caption(first_name=first_name, chat_id=chat_id)
+    safe_name = html.escape(user.first_name or "User")
+    mention = f'<a href="tg://user?id={user.id}">{safe_name}</a>'
+    username = f"@{html.escape(user.username)}" if user.username else "Not set"
+
+    caption = build_welcome_caption(
+        mention=mention,
+        username=username,
+        chat_id=chat_id,
+    )
     reply_markup = build_contact_admin_keyboard()
     photo_id = await get_user_photo_id(context, user.id)
 
@@ -134,14 +143,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_photo(
             photo=photo_id,
             caption=caption,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=reply_markup,
         )
     else:
         await update.message.reply_text(
             text=caption,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=reply_markup,
+            disable_web_page_preview=True,
         )
 
 
@@ -154,8 +164,8 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     save_user(user.id)
 
     await update.message.reply_text(
-        f"🆔 **Aapki Player Chat ID (UID):** `{chat_id}`",
-        parse_mode="Markdown",
+        f"🆔 <b>Aapki Player Chat ID (UID):</b> <code>{chat_id}</code>",
+        parse_mode="HTML",
     )
 
 
@@ -172,9 +182,9 @@ async def complaint_command(
     if not complaint_text:
         context.user_data["awaiting_complaint"] = True
         await update.message.reply_text(
-            "📝 **Complaint System**\n\n"
+            "📝 <b>Complaint System</b>\n\n"
             "Kripya apni complaint likh kar bhejein. Aapka message seedha Admin ko bhej diya jayega.",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return
 
@@ -189,26 +199,28 @@ async def submit_complaint(
 
     user = update.effective_user
     chat_id = update.effective_chat.id
-    username_display = f"@{user.username}" if user.username else "N/A"
+    username_display = f"@{html.escape(user.username)}" if user.username else "N/A"
+    safe_full_name = html.escape(user.full_name)
+    safe_complaint = html.escape(complaint_text)
 
     if ADMIN_ID != 0:
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=(
-                    f"🚨 **New Complaint Received**\n\n"
-                    f"👤 **User:** {user.full_name} ({username_display})\n"
-                    f"🆔 **Player Chat ID (UID):** `{chat_id}`\n"
-                    f"💬 **Message:** {complaint_text}"
+                    f"🚨 <b>New Complaint Received</b>\n\n"
+                    f"👤 <b>User:</b> {safe_full_name} ({username_display})\n"
+                    f"🆔 <b>Player Chat ID (UID):</b> <code>{chat_id}</code>\n"
+                    f"💬 <b>Message:</b> {safe_complaint}"
                 ),
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         except Exception as e:
             logger.error(f"Failed to forward complaint to admin: {e}")
 
     await update.message.reply_text(
-        "✅ **Aapki complaint darj kar li gayi hai.** Admin jald hi is par action lenge.",
-        parse_mode="Markdown",
+        "✅ <b>Aapki complaint darj kar li gayi hai.</b> Admin jald hi is par action lenge.",
+        parse_mode="HTML",
     )
 
 
@@ -227,8 +239,8 @@ async def broadcast_command(
     broadcast_text = " ".join(context.args).strip() if context.args else ""
     if not broadcast_text:
         await update.message.reply_text(
-            "📢 **Broadcast Usage:**\n`/broadcast Aapka message yahan likhein`",
-            parse_mode="Markdown",
+            "📢 <b>Broadcast Usage:</b>\n<code>/broadcast Aapka message yahan likhein</code>",
+            parse_mode="HTML",
         )
         return
 
@@ -237,6 +249,7 @@ async def broadcast_command(
         await update.message.reply_text("Koi registered user nahi mila.")
         return
 
+    safe_msg = html.escape(broadcast_text)
     sent_count = 0
     failed_count = 0
 
@@ -244,8 +257,8 @@ async def broadcast_command(
         try:
             await context.bot.send_message(
                 chat_id=uid,
-                text=f"📢 **Announcement**\n\n{broadcast_text}",
-                parse_mode="Markdown",
+                text=f"📢 <b>Announcement</b>\n\n{safe_msg}",
+                parse_mode="HTML",
             )
             sent_count += 1
         except Exception:
@@ -283,15 +296,15 @@ async def on_button_click(
 
     if query.data == "contact_admin" and query.message:
         if ADMIN_ID != 0:
-            admin_info = f"Admin Chat ID: `{ADMIN_ID}`"
+            admin_info = f"Admin Chat ID: <code>{ADMIN_ID}</code>"
         else:
             admin_info = "Admin ID abhi set nahi ki gayi hai."
 
         await query.message.reply_text(
-            f"📩 **Contact Admin**\n\n"
-            f"Agar aapko koi madad chahiye, to `/complaint` command se apna message bhejein.\n"
+            f"🟥 <b>Contact Admin</b>\n\n"
+            f"Agar aapko koi madad chahiye, to /complaint command se apna message bhejein.\n"
             f"{admin_info}",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
 
 
@@ -323,7 +336,6 @@ async def post_init(application: Application) -> None:
 def main() -> None:
     start_health_server(PORT)
 
-    # Python 3.12+ event loop compatibility
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -340,7 +352,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(on_button_click))
     app.add_error_handler(error_handler)
 
-    logger.info("Bot is running...")
+    logger.info("Bot is running 24/7...")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
