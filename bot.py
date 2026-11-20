@@ -102,7 +102,7 @@ def build_contact_admin_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(
-                "Contact Admin",
+                "CONTACT ADMIN",
                 callback_data="contact_admin",
                 style="primary",
             )
