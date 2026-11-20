@@ -27,10 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Aapka diya gaya Bot Token
 BOT_TOKEN = "8017205070:AAFgbCv6bPfLb-CWCelBW2_S50NYDOIAh2Q"
-
-# Render Environment Variable se ADMIN_ID aur PORT lega
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 PORT = int(os.getenv("PORT", "10000"))
 
@@ -101,8 +98,15 @@ def build_welcome_caption(mention: str, username: str, chat_id: int) -> str:
 
 
 def build_contact_admin_keyboard() -> InlineKeyboardMarkup:
+    # Blue color button ("primary") — koi random link nahi
     keyboard = [
-        [InlineKeyboardButton(" Contact Admin", callback_data="contact_admin")]
+        [
+            InlineKeyboardButton(
+                "Contact Admin",
+                callback_data="contact_admin",
+                style="primary",
+            )
+        ]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -301,7 +305,7 @@ async def on_button_click(
             admin_info = "Admin ID abhi set nahi ki gayi hai."
 
         await query.message.reply_text(
-            f"🟥 <b>Contact Admin</b>\n\n"
+            f"📩 <b>Contact Admin</b>\n\n"
             f"Agar aapko koi madad chahiye, to /complaint command se apna message bhejein.\n"
             f"{admin_info}",
             parse_mode="HTML",
